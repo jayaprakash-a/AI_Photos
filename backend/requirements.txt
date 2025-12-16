@@ -1,0 +1,21 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+redis
+celery
+python-multipart
+requests
+jinja2
+python-dotenv
+pydantic-settings
+# Image Processing
+Pillow
+opencv-python
+# AI & ML
+scikit-learn
+numpy
+# Face Recognition (New)
+torch
+torchvision
+facenet-pytorch

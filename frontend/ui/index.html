@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photos App | AI Gallery</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M21 19V5C21 3.9 20.1 3 19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19ZM8.5 13.5L11 16.51L14.5 12L19 18H5L8.5 13.5Z"
+                        fill="white" />
+                </svg>
+                <span>AIGallery</span>
+            </div>
+            <nav>
+                <button class="nav-item active" onclick="showSection('dashboard')">Dashboard</button>
+                <button class="nav-item" onclick="showSection('library')">Smart Library</button>
+                <button class="nav-item" onclick="showSection('best')">Best Shots</button>
+                <button class="nav-item" onclick="showSection('events')">Events</button>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main>
+            <header>
+                <h1>Dashboard</h1>
+                <div class="status-indicator" id="serverStatus">
+                    <span class="dot"></span> Backend Offline
+                </div>
+            </header>
+
+            <!-- Ingestion Section -->
+            <section id="dashboard" class="content-section active">
+                <div class="card ingestion-card">
+                    <h2>Import Photos</h2>
+                    <p>Point the AI to a local folder to start analyzing.</p>
+                    <div class="input-group">
+                        <input type="text" id="dirInput" placeholder="C:\Users\YourName\Pictures\Vacation"
+                            value="C:\Users\akula\Pictures\Dubai">
+                        <button onclick="triggerIngest()" class="btn-primary">
+                            <span>Start Ingestion</span>
+                        </button>
+                    </div>
+                    <div id="ingestStatus" class="status-message"></div>
+                </div>
+
+                <div class="card ingestion-card">
+                    <h2>Organize Library</h2>
+                    <p>Group photos into smart events based on time and location.</p>
+                    <button onclick="triggerOrganize()" class="btn-secondary">
+                        <span>Run AI Organizer</span>
+                    </button>
+                    <div id="organizeStatus" class="status-message"></div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="card stat-card">
+                        <h3>Photos Processed</h3>
+                        <div class="stat-value" id="statPhotos">-</div>
+                    </div>
+                    <div class="card stat-card">
+                        <h3>Faces Detected</h3>
+                        <div class="stat-value" id="statFaces">-</div>
+                    </div>
+                    <div class="card stat-card">
+                        <h3>Avg Sharpness</h3>
+                        <div class="stat-value" id="statSharp">-</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Best Shots Section -->
+            <section id="best" class="content-section">
+                <div class="section-header">
+                    <h2>Best Shots (Sharpest)</h2>
+                    <div class="controls">
+                        <label>
+                            <input type="checkbox" id="clusterToggle" onchange="loadBestPhotos()"> Cluster by Location
+                        </label>
+                        <button onclick="loadBestPhotos()" class="btn-secondary">Refresh</button>
+                    </div>
+                </div>
+                <div class="gallery-grid" id="bestGallery">
+                    <!-- Photos injected here -->
+                    <div class="loading-spinner">Loading...</div>
+                </div>
+            </section>
+
+            <!-- Library Section -->
+            <section id="library" class="content-section">
+                <div class="section-header">
+                    <h2>Smart Library (Events)</h2>
+                    <button onclick="loadEvents()" class="btn-secondary">Refresh</button>
+                </div>
+                <div class="events-grid" id="eventsGrid">
+                    <!-- Events injected here -->
+                </div>
+
+                <!-- Simple Modal for Event Details (Inline for MVP) -->
+                <div id="eventDetailView"
+                    style="display:none; margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 2rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <button onclick="closeEventDetail()" style="margin-bottom:1rem;" class="btn-secondary">&larr;
+                            Back
+                            to Events</button>
+                        <button onclick="editEventDetails()" class="btn-primary">✏️ Annotate Event</button>
+                    </div>
+                    <h2 id="detailTitle">Event Name</h2>
+                    <p id="detailDesc" style="color:var(--text-secondary); margin-bottom:1rem;"></p>
+
+                    <h3>Top Photos</h3>
+                    <div class="gallery-grid" id="detailGallery"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Edit Event Modal -->
+    <div id="editEventModal" class="modal-overlay">
+        <div class="modal">
+            <h2>Annotate Event</h2>
+            <div class="input-group">
+                <label>Event Name</label>
+                <input type="text" id="editEventName">
+            </div>
+            <div class="input-group">
+                <label>Location (Place)</label>
+                <input type="text" id="editEventLocation" placeholder="e.g. Paris, France">
+            </div>
+            <div class="input-group">
+                <label>Description</label>
+                <input type="text" id="editEventDesc">
+            </div>
+            <div class="modal-actions">
+                <button onclick="closeEditModal()" class="btn-secondary">Cancel</button>
+                <button onclick="saveEventDetails()" class="btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
