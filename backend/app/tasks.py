@@ -12,6 +12,16 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models import Photo, Face
 
+# Face Analyzer Singleton
+_analyzer = None
+def get_analyzer():
+    global _analyzer
+    if _analyzer is None:
+        from app.ai.face_recognition.analyze_faces import Analyzer
+        model_dir = os.path.join(os.path.dirname(__file__), "ai", "face_recognition", "models")
+        _analyzer = Analyzer(model_dir)
+    return _analyzer
+
 # Logging Setup
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -116,24 +126,33 @@ def process_photo(photo_id: int):
     # 1. Compute Hash (Duplicate Detection) - Simplified
     # In real app, do this before DB insert
     
-    # 2. Face Detection
+    # 2. Face, Eye, and Glass Analysis
     try:
-        from app.ai.face_detection import detector
-        logger.info(f"Detecting faces for {photo.path}...")
-        faces = detector.detect_faces(photo.path)
-        logger.info(f"Found {len(faces)} faces in {photo.filename}.")
+        analyzer = get_analyzer()
+        logger.info(f"Analyzing faces/eyes/glasses for {photo.path}...")
+        results = analyzer.analyze(photo.path, "")
         
-        for face_data in faces:
-            box = face_data['box']
+        logger.info(f"Found {len(results['faces'])} faces in {photo.filename}.")
+        
+        for face_data in results['faces']:
+            bbox = face_data['bbox']
+            # bbox is [x1, y1, x2, y2]
+            x1, y1, x2, y2 = bbox
             new_face = Face(
                 photo_id=photo.id,
-                x=box[0], y=box[1], w=box[2], h=box[3]
+                x=int(x1), y=int(y1), 
+                w=int(x2 - x1), h=int(y2 - y1),
+                identity=face_data.get('identity'),
+                has_glasses=1 if face_data.get('has_glasses') else 0,
+                eyes_open=1 if face_data.get('eyes_open') else 0,
+                detection_confidence=face_data.get('detection_confidence'),
+                recognition_confidence=face_data.get('recognition_confidence')
             )
             db.add(new_face)
         db.commit()
     except Exception as e:
-        logger.error(f"Error in face detection for {photo.id}: {e}")
-        notify_error(f"Face detection failed for photo {photo.id}: {e}")
+        logger.error(f"Error in face analysis for {photo.id}: {e}")
+        notify_error(f"Face analysis failed for photo {photo.id}: {e}")
     
     # 3. Aesthetic Score
     try:

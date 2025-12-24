@@ -54,6 +54,13 @@ class Face(Base):
     w = Column(Integer)
     h = Column(Integer)
     
+    # Face Details
+    identity = Column(String, index=True, nullable=True)
+    has_glasses = Column(Integer, default=0) # 0: No, 1: Yes
+    eyes_open = Column(Integer, default=1) # 0: No, 1: Yes
+    detection_confidence = Column(Float, nullable=True)
+    recognition_confidence = Column(Float, nullable=True)
+    
     # Embedding (Store as binary or JSON for now if vector extension not available, but Plan said pgvector)
     # If pgvector is available, use Vector type. For MVP/SQLite fallback, we might use JSON/Blob
     embedding = Column(LargeBinary, nullable=True) 

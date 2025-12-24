@@ -64,6 +64,12 @@ A local-first, AI-powered application to organize large event photo collections 
 -   [ ] *Smart Retouch:* User-selectable fixes (Remove face shadows, clear skin).
 -   [ ] "Fix this photo" button (GFPGAN integration).
 -   [ ] Handling >100GB libraries (Optimization).
+-   [ ] Check for eyes opening of main people in the photo.
+-   [ ] Check for smile of main people in the photo.
+-   [ ] Check lighting of main people in the photo.
+-   [ ] Explore image culling (Removing similar photos).
+
+
 ## 5. Hardware & Performance Estimates (Low Spec)
 ### Requirements
 -   *Minimum:* 4GB RAM, 2 Cores. (Runs slow but works).
@@ -71,11 +77,11 @@ A local-first, AI-powered application to organize large event photo collections 
 -   *Optional:* NVIDIA GPU (Speeds up AI by 10-20x), but CPU-only is fully supported.
 ### Estimated Processing Time (CPU Only)
 Assumption: 2,000 photos (~3GB) on a modern laptop CPU (e.g., i5/Ryzen 5) or Mini PC.
-| Step | Time per Photo | Total for 2,000 Photos | Notes |
-| :--- | :--- | :--- | :--- |
-| *Ingest (Hash/Exif)* | ~0.05s | ~2 mins | Purely I/O bound. |
-| *Face Detection* | ~0.3s | ~10 mins | Depends on image resolution. |
-| *Face Embedding* | ~0.3s | ~10 mins | Run only on detected faces. |
-| *Aesthetic Score* | ~0.2s | ~7 mins | Low resolution is fine. |
-| *TOTAL* | *~1s* | *~30-45 mins* | *Background Job.* |
+| Step                 | Time per Photo | Total for 2,000 Photos | Notes                        |
+| :------------------- | :------------- | :--------------------- | :--------------------------- |
+| *Ingest (Hash/Exif)* | ~0.05s         | ~2 mins                | Purely I/O bound.            |
+| *Face Detection*     | ~0.3s          | ~10 mins               | Depends on image resolution. |
+| *Face Embedding*     | ~0.3s          | ~10 mins               | Run only on detected faces.  |
+| *Aesthetic Score*    | ~0.2s          | ~7 mins                | Low resolution is fine.      |
+| *TOTAL*              | *~1s*          | *~30-45 mins*          | *Background Job.*            |
 Note: The app runs in the background. You can start the import and check back in an hour.

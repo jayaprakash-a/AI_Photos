@@ -16,11 +16,16 @@ function showSection(sectionId) {
 
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     // Find button that calls specific showSection
-    // Simple heuristic for now
-    event.target.classList.add('active');
+    if (event && event.target) {
+        event.target.classList.add('active');
+    }
 
-    if (sectionId === 'best') {
-        loadBestPhotos();
+    if (sectionId === 'bestshots') {
+        loadBestShots();
+    } else if (sectionId === 'library') {
+        loadEvents();
+    } else if (sectionId === 'dashboard') {
+        loadDashboardStats();
     }
 
     checkBackendHealth();
@@ -28,21 +33,22 @@ function showSection(sectionId) {
 
 // Backend Health
 async function checkBackendHealth() {
-    const el = document.getElementById('serverStatus');
+    const el = document.getElementById('backend-status');
+    if (!el) return;
     try {
         await fetch(`${API_BASE}/health`);
-        el.innerHTML = '<span class="dot"></span> Online';
-        el.classList.add('online');
+        el.innerText = 'Backend Online';
+        el.parentElement.classList.add('online');
     } catch (e) {
-        el.innerHTML = '<span class="dot"></span> Backend Offline';
-        el.classList.remove('online');
+        el.innerText = 'Backend Offline';
+        el.parentElement.classList.remove('online');
     }
 }
 
 // Ingestion
-async function triggerIngest() {
-    const dir = document.getElementById('dirInput').value;
-    const statusEl = document.getElementById('ingestStatus');
+async function startIngestion() {
+    const dir = document.getElementById('folderPath').value;
+    const statusEl = document.getElementById('ingestionStatus');
 
     if (!dir) return;
 
@@ -54,18 +60,22 @@ async function triggerIngest() {
         const data = await res.json();
         statusEl.textContent = `Success! Task ID: ${data.task_id}. Processing in background...`;
         statusEl.style.color = 'var(--success)';
+
+        // Refresh stats after a bit
+        setTimeout(loadDashboardStats, 2000);
     } catch (e) {
-        statusEl.textContent = "Error triggering ingestion. Is backend running? Use run_backend.bat";
+        statusEl.textContent = "Error triggering ingestion. Is backend running?";
         statusEl.style.color = 'var(--danger)';
     }
 }
 
 // Best Photos
-async function loadBestPhotos() {
-    const grid = document.getElementById('bestGallery');
+async function loadBestShots() {
+    const grid = document.getElementById('bestShotsGrid');
     grid.innerHTML = '<div class="loading-spinner">Loading...</div>';
 
-    const useClustering = document.getElementById('clusterToggle').checked;
+    const toggle = document.getElementById('clusterToggle');
+    const useClustering = toggle ? toggle.checked : false;
 
     try {
         const res = await fetch(`${API_BASE}/photos/best?limit=20&group_by_location=${useClustering}`);
@@ -80,6 +90,7 @@ async function loadBestPhotos() {
         photos.forEach(photo => {
             const div = document.createElement('div');
             div.className = 'photo-item';
+            div.onclick = () => openPhotoDetail(photo.id);
             // Placeholder: We need a way to serve images.
             // Assuming for MVP we can't serve local files easily due to browser security
             // UNLESS we mount the photo directory in backend. 
@@ -103,7 +114,19 @@ async function loadBestPhotos() {
     }
 }
 
-// Mock Stats (Real stats would need a new endpoint)
+// Dashboard Stats
+async function loadDashboardStats() {
+    try {
+        const res = await fetch(`${API_BASE}/stats`);
+        const data = await res.json();
+
+        document.getElementById('statTotalPhotos').textContent = data.total_photos;
+        document.getElementById('statProcessed').textContent = data.processed_photos;
+    } catch (e) {
+        console.error("Failed to load stats", e);
+    }
+}
+
 // --- Smart Events ---
 
 async function triggerOrganize() {
@@ -227,13 +250,31 @@ async function openEvent(eventId) {
     const detailView = document.getElementById('eventDetailView');
     detailView.style.display = 'block';
 
+    // Get filter values
+    const personCheckboxes = document.querySelectorAll('.person-checkbox:checked');
+    const persons = Array.from(personCheckboxes).map(cb => cb.value);
+    const glassesToggle = document.getElementById('glassesFilter');
+    const hasGlasses = glassesToggle ? glassesToggle.checked : false;
+
+    // Update count display
+    const countEl = document.getElementById('selectedPeopleCount');
+    if (countEl) {
+        countEl.textContent = persons.length > 0 ? `${persons.length} selected` : 'Select People';
+    }
+
     // Reset contents
     document.getElementById('detailTitle').textContent = "Loading...";
     document.getElementById('detailDesc').textContent = "";
     document.getElementById('detailGallery').innerHTML = '<div class="loading-spinner">Loading...</div>';
 
     try {
-        const res = await fetch(`${API_BASE}/events/${eventId}`);
+        let url = `${API_BASE}/events/${eventId}?`;
+        if (persons && persons.length > 0) {
+            persons.forEach(p => url += `persons=${encodeURIComponent(p)}&`);
+        }
+        if (hasGlasses) url += `has_glasses=true&`;
+
+        const res = await fetch(url);
         const data = await res.json();
         const event = data.event;
         const photos = data.photos;
@@ -246,9 +287,15 @@ async function openEvent(eventId) {
         const gallery = document.getElementById('detailGallery');
         gallery.innerHTML = '';
 
+        if (photos.length === 0) {
+            gallery.innerHTML = '<p style="grid-column: 1/-1; text-align: center; padding: 2rem;">No photos match these filters.</p>';
+            return;
+        }
+
         photos.forEach(photo => {
             const div = document.createElement('div');
             div.className = 'photo-item';
+            div.onclick = () => openPhotoDetail(photo.id);
             div.innerHTML = `
                 <img src="${API_BASE}/photos/${photo.id}/image" loading="lazy">
                 <div class="photo-info">
@@ -260,8 +307,52 @@ async function openEvent(eventId) {
 
     } catch (e) {
         console.error(e);
+        document.getElementById('detailGallery').innerHTML = '<p style="color:var(--danger)">Error loading photos.</p>';
     }
 }
+
+async function applyFilters() {
+    if (currentEventId) {
+        openEvent(currentEventId);
+    }
+}
+
+async function loadIdentities() {
+    try {
+        const res = await fetch(`${API_BASE}/people/identities`);
+        const identities = await res.json();
+        const container = document.getElementById('personFilterOptions');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        identities.forEach(name => {
+            const div = document.createElement('div');
+            div.className = 'multi-select-option';
+            div.innerHTML = `
+                <input type="checkbox" class="person-checkbox" value="${name}" id="p_${name.replace(/\s+/g, '_')}" onchange="applyFilters()">
+                <label for="p_${name.replace(/\s+/g, '_')}">${name}</label>
+            `;
+            container.appendChild(div);
+        });
+    } catch (e) {
+        console.error("Failed to load identities", e);
+    }
+}
+
+function toggleMultiSelect(e) {
+    e.stopPropagation();
+    const options = document.getElementById('personFilterOptions');
+    options.classList.toggle('active');
+}
+
+// Close multi-select on click outside
+document.addEventListener('click', (e) => {
+    const options = document.getElementById('personFilterOptions');
+    if (options && options.classList.contains('active') && !e.target.closest('.multi-select-container')) {
+        options.classList.remove('active');
+    }
+});
 
 function closeEventDetail() {
     document.getElementById('eventDetailView').style.display = 'none';
@@ -311,6 +402,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Setup autocomplete for location input
     setupLocationAutocomplete();
+
+    // Load initial data
+    loadIdentities();
 });
 
 // --- Place Autocomplete ---
@@ -373,6 +467,76 @@ document.addEventListener('click', (e) => {
     if (e.target.id !== 'editEventLocation') {
         const list = document.getElementById('location-suggestions');
         if (list) list.remove();
+    }
+});
+
+// --- Photo Detail Viewer ---
+
+async function openPhotoDetail(photoId) {
+    const modal = document.getElementById('photoDetailModal');
+    const largeImg = document.getElementById('detailLargeImage');
+
+    // Show modal immediately with loading state
+    largeImg.src = `${API_BASE}/photos/${photoId}/image`;
+    modal.classList.add('active');
+
+    try {
+        const res = await fetch(`${API_BASE}/photos/${photoId}`);
+        const data = await res.json();
+
+        // Populate Sidebar
+        document.getElementById('metaFilename').textContent = data.filename;
+
+        // Event Info
+        if (data.event) {
+            document.getElementById('metaEventName').textContent = data.event.name || "Unnamed Event";
+            document.getElementById('metaEventLocation').textContent = data.event.location_name || "Location unknown";
+            document.getElementById('metaEventTime').textContent = new Date(data.event.start_time).toLocaleDateString();
+        }
+
+        // Faces
+        const facesList = document.getElementById('metaFacesList');
+        facesList.innerHTML = '';
+        if (data.faces && data.faces.length > 0) {
+            data.faces.forEach(face => {
+                const faceDiv = document.createElement('div');
+                faceDiv.className = 'face-card';
+                faceDiv.innerHTML = `
+                    <span class="face-name">${face.identity || 'Unknown Person'}</span>
+                    ${face.has_glasses ? '<span class="face-tag">Wearing Glasses</span>' : ''}
+                    ${!face.eyes_open ? '<span class="face-tag">Eyes Closed</span>' : '<span class="face-tag">Eyes Open</span>'}
+                    <div class="meta-sub" style="font-size:0.7rem">Confidence: ${(face.recognition_confidence * 100).toFixed(0)}%</div>
+                `;
+                facesList.appendChild(faceDiv);
+            });
+        } else {
+            facesList.innerHTML = '<p class="meta-sub">No faces detected in this shot.</p>';
+        }
+
+        // Technicals
+        document.getElementById('metaBlurScore').textContent = data.blur_score.toFixed(0);
+        document.getElementById('metaAestheticScore').textContent = data.aesthetic_score.toFixed(1);
+
+    } catch (e) {
+        console.error("Failed to load photo details", e);
+    }
+}
+
+function closePhotoDetail() {
+    const modal = document.getElementById('photoDetailModal');
+    modal.classList.remove('active');
+}
+
+// Global listeners
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closePhotoDetail();
+        closeEditModal();
+        // and close lists
+        const list = document.getElementById('location-suggestions');
+        if (list) list.remove();
+        const options = document.getElementById('personFilterOptions');
+        if (options) options.classList.remove('active');
     }
 });
 

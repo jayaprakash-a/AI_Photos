@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.session import engine, Base
 import app.models # Register models
+from sqladmin import Admin
+from app.admin import PhotoAdmin, FaceAdmin, EventAdmin, ClusterAdmin
 
 # Create tables (Simplistic for MVP, usually use Alembic)
 Base.metadata.create_all(bind=engine)
@@ -11,6 +13,13 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
+
+# Admin Interface
+admin = Admin(app, engine)
+admin.add_view(PhotoAdmin)
+admin.add_view(FaceAdmin)
+admin.add_view(EventAdmin)
+admin.add_view(ClusterAdmin)
 
 # Set all CORS enabled origins
 app.add_middleware(

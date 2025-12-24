@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from typing import List
 from app.db.session import SessionLocal
 from app.tasks import ingest_photos
 from app.models import Photo
@@ -33,6 +34,12 @@ def start_ingest(directory: str):
 @router.get("/health")
 def health_check():
     return {"status": "ok"}
+
+@router.get("/stats")
+def get_stats(db: Session = Depends(get_db)):
+    total = db.query(Photo).count()
+    processed = db.query(Photo).filter(Photo.blur_score.isnot(None)).count()
+    return {"total_photos": total, "processed_photos": processed}
 
 @router.get("/photos/best")
 def get_best_photos(
@@ -123,13 +130,28 @@ def get_events(db: Session = Depends(get_db)):
     return result
 
 @router.get("/events/{event_id}")
-def get_event_details(event_id: int, db: Session = Depends(get_db)):
+def get_event_details(
+    event_id: int, 
+    persons: List[str] = Query(None), 
+    has_glasses: bool = None,
+    db: Session = Depends(get_db)
+):
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event: raise HTTPException(404)
     
-    # Get top 50 photos for this event, sorted by score or time
-    photos = db.query(Photo).filter(Photo.event_id == event_id)\
-        .order_by(Photo.blur_score.desc()).limit(50).all()
+    # Base query
+    query = db.query(Photo).filter(Photo.event_id == event_id)
+    
+    # Apply filters if present
+    if (persons and len(persons) > 0) or has_glasses is not None:
+        query = query.join(Face)
+        if persons and len(persons) > 0:
+            query = query.filter(Face.identity.in_(persons))
+        if has_glasses is not None:
+            query = query.filter(Face.has_glasses == (1 if has_glasses else 0))
+    
+    # Get top 50 photos for this event, sorted by score
+    photos = query.order_by(Photo.blur_score.desc()).limit(50).all()
         
     return {
         "event": {
@@ -239,3 +261,46 @@ def update_person(cluster_id: int, update: PersonUpdate, db: Session = Depends(g
     cluster.name = update.name
     db.commit()
     return {"status": "updated", "person": cluster.name}
+
+@router.get("/people/identities")
+def get_identities(db: Session = Depends(get_db)):
+    """
+    Get all unique identities found across all photos.
+    """
+    identities = db.query(Face.identity).filter(Face.identity.isnot(None), Face.identity != "").distinct().all()
+    # Sort them for the UI
+    name_list = sorted([i[0] for i in identities if i[0]])
+    return name_list
+
+@router.get("/photos/{photo_id}")
+def get_photo_detail(photo_id: int, db: Session = Depends(get_db)):
+    photo = db.query(Photo).filter(Photo.id == photo_id).first()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    faces = db.query(Face).filter(Face.photo_id == photo_id).all()
+    event = db.query(Event).filter(Event.id == photo.event_id).first()
+    
+    return {
+        "id": photo.id,
+        "filename": photo.filename,
+        "path": photo.path,
+        "timestamp": photo.timestamp,
+        "blur_score": photo.blur_score,
+        "aesthetic_score": photo.aesthetic_score,
+        "event": {
+            "id": event.id,
+            "name": event.name,
+            "location_name": event.location_name,
+            "start_time": event.start_time
+        } if event else None,
+        "faces": [
+            {
+                "identity": f.identity,
+                "has_glasses": bool(f.has_glasses),
+                "eyes_open": bool(f.eyes_open),
+                "recognition_confidence": f.recognition_confidence,
+                "bbox": [f.x, f.y, f.w, f.h]
+            } for f in faces
+        ]
+    }
