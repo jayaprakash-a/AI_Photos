@@ -81,6 +81,12 @@ A local-first, AI-powered photo organization and management tool with intelligen
     pip install -r requirements.txt
     ```
 
+2.  **AI Model Setup**:
+    To enable face recognition and analysis features, you must download the pre-trained model files.
+    - **Download**: [Download AI Models (Mock Link)](https://example.com/ai-models-download)
+    - **Installation**: Extract the downloaded `.pth` files and paste them into the following directory:
+      `backend/app/ai/face_recognition/models/`
+
 ### 3. Running the App
 You need two terminal windows running simultaneously.
 
