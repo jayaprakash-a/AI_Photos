@@ -6,11 +6,15 @@ A local-first, AI-powered photo organization and management tool with intelligen
 
 ### 🔍 Smart Photo Analysis
 - **EXIF Metadata Extraction**: Automatically extracts timestamps, GPS coordinates, and camera settings
-- **Face Detection**: Identifies and tracks faces across your photo library using FaceNet
+- **Face Recognition & Analysis**:
+  - Detection and identity recognition across your library
+  - **Eyeglasses Detection**: AI identifies if subjects are wearing glasses
+  - **Eye State Analysis**: Detects if eyes are open or closed for every subject
+  - High-confidence scoring for detection and recognition
 - **Aesthetic Scoring**: 
   - Blur/Sharpness detection to find your best shots
   - NIMA (Neural Image Assessment) for aesthetic quality scoring
-- **Duplicate Detection**: Hash-based duplicate photo identification
+- **Database Dashboard**: Integrated web interface for direct database management at `/admin`
 
 ### 📅 Intelligent Event Organization
 - **Automatic Event Clustering**: Groups photos into events based on:
@@ -44,6 +48,12 @@ A local-first, AI-powered photo organization and management tool with intelligen
 - **Toast Notifications**: Real-time feedback for all operations
 - **Error Queue**: Redis-backed error notification system
 - **Background Processing**: Non-blocking AI operations with Celery
+
+### 🖼️ Interactive Gallery
+- **Multi-select Filtering**: Filter events by multiple people and eyeglasses status simultaneously
+- **Photo Detail Viewer**: Full-screen lightbox with comprehensive metadata sidebar
+- **Technicals View**: Real-time display of blur and aesthetic scores
+- **Keyboard Navigation**: Quick exit with `Escape` key
 
 ## 🏗️ Architecture
 
@@ -112,7 +122,35 @@ celery -A app.tasks worker --loglevel=info -P solo
       - Get geocoding feedback with coordinates
 6.  **Browse Best Shots**:
     - Click "Best Shots" in the sidebar to see the sharpest images
-    - Toggle "Cluster by Location" to group by geographic areas
+    - Toggle "Group by Location" to group by geographic areas
+7.  **Manage Database**:
+    - Visit **[http://localhost:8001/admin](http://localhost:8001/admin)** to manage raw database entries (Photos, Faces, Events) directly.
+
+## 📡 API Reference
+
+The backend provides a RESTful API under the `/api/v1` prefix.
+
+### Photos
+- `GET /photos/best`: List top-rated photos with optional location clustering
+- `GET /photos/{id}/image`: Serve the actual image file
+- `GET /photos/{id}`: Detailed metadata including detected faces and event info
+
+### Library & Events
+- `POST /organize`: Trigger the AI grouping algorithm
+- `GET /events`: List all discovered events
+- `GET /events/{id}`: Get photos for an event with multi-person filtering
+- `PATCH /events/{id}`: Annotate event name, description, and location
+
+### AI & People
+- `GET /people/identities`: Get list of uniquely recognized people
+- `GET /people`: Get clusters/people with cover photos
+- `PATCH /people/{id}`: Update person/cluster names
+
+### System
+- `GET /stats`: Current library statistics (total vs processed)
+- `GET /health`: Backend connectivity check
+- `GET /notifications`: Fetch recent background task errors
+- `GET /places/search?q=...`: Geographic name search/autocomplete
 
 ## 🎯 Key Workflows
 
