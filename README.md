@@ -83,7 +83,7 @@ A local-first, AI-powered photo organization and management tool with intelligen
 
 2.  **AI Model Setup**:
     To enable face recognition and analysis features, you must download the pre-trained model files.
-    - **Download**: [Download AI Models (Mock Link)](https://example.com/ai-models-download)
+    - **Download**: [Download AI Models](https://drive.google.com/drive/folders/1aJu__xIydSxNKTI8jxdNqBxSzAGvGAVe?usp=sharing)
     - **Installation**: Extract the downloaded `.pth` files and paste them into the following directory:
       `backend/app/ai/face_recognition/models/`
 
