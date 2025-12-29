@@ -24,6 +24,8 @@ function showSection(sectionId) {
         loadBestShots();
     } else if (sectionId === 'library') {
         loadEvents();
+    } else if (sectionId === 'people') {
+        loadPeople();
     } else if (sectionId === 'dashboard') {
         loadDashboardStats();
     }
@@ -241,6 +243,146 @@ async function saveEventDetails() {
         closeEditModal();
     } catch (e) {
         showToast("Failed to update event", "error");
+    }
+}
+
+async function loadPeople() {
+    const grid = document.getElementById('peopleGrid');
+    if (!grid) return;
+    grid.innerHTML = '<div class="loading-spinner">Loading People...</div>';
+
+    try {
+        const res = await fetch(`${API_BASE}/people`);
+        const people = await res.json();
+
+        grid.innerHTML = '';
+        if (people.length === 0) {
+            grid.innerHTML = '<p>No people detected yet. Ensure AI processing is complete.</p>';
+            return;
+        }
+
+        people.forEach(p => {
+            const card = document.createElement('div');
+            card.className = 'person-card';
+
+            const coverUrl = p.cover_photo_id ? `${API_BASE}/photos/${p.cover_photo_id}/image` : '';
+
+            card.innerHTML = `
+                <div class="person-cover" onclick="openPersonPhotos('${p.name}')" style="cursor:pointer">
+                    ${p.is_solo_ref ? '<div class="solo-tag">Reference Shot</div>' : ''}
+                    ${coverUrl ? `<img src="${coverUrl}" loading="lazy">` : `<div class="p-placeholder">${p.name[0]}</div>`}
+                </div>
+                <div class="person-info">
+                    <div class="person-name" title="${p.name}" onclick="openPersonPhotos('${p.name}')" style="cursor:pointer">${p.name}</div>
+                    <div class="person-meta">${p.face_count} photos</div>
+                    <button class="btn-primary export-btn" onclick="exportPersonPDF('${p.name}')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v4a2 2 0 012-2h14a2 2 0 012 2zM7 10l5 5 5-5M12 15V3"/>
+                        </svg>
+                        Export PDF
+                    </button>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    } catch (e) {
+        console.error(e);
+        grid.innerHTML = '<p style="color:var(--danger)">Error loading people.</p>';
+    }
+}
+
+async function openPersonPhotos(name) {
+    document.getElementById('peopleGridView').style.display = 'none';
+    const detailView = document.getElementById('personDetailView');
+    detailView.style.display = 'block';
+
+    document.getElementById('personDetailName').textContent = name;
+    const grid = document.getElementById('personPhotosGrid');
+    grid.innerHTML = '<div class="loading-spinner">Loading photos...</div>';
+
+    try {
+        const res = await fetch(`${API_BASE}/people/${encodeURIComponent(name)}/photos`);
+        const photos = await res.json();
+
+        grid.innerHTML = '';
+        if (photos.length === 0) {
+            grid.innerHTML = '<p style="grid-column:1/-1; text-align:center">No photos found.</p>';
+            return;
+        }
+
+        photos.forEach(photo => {
+            const container = document.createElement('div');
+            container.className = 'person-photo-item';
+
+            // Format time
+            const dateStr = photo.timestamp ? new Date(photo.timestamp).toLocaleDateString() : 'Unknown date';
+
+            container.innerHTML = `
+                <div class="photo-item" onclick="openPhotoDetail(${photo.id})">
+                    <img src="${API_BASE}/photos/${photo.id}/image" loading="lazy">
+                </div>
+                <div class="photo-item-title">${photo.filename} • ${dateStr}</div>
+            `;
+            grid.appendChild(container);
+        });
+    } catch (e) {
+        console.error(e);
+        grid.innerHTML = '<p style="color:var(--danger)">Error loading photos.</p>';
+    }
+}
+
+function closePersonDetail() {
+    document.getElementById('personDetailView').style.display = 'none';
+    document.getElementById('peopleGridView').style.display = 'block';
+}
+
+async function exportPersonPDF(name) {
+    const overlay = document.getElementById('exportOverlay');
+    const bar = document.querySelector('.progress-bar-fill');
+
+    // Show overlay
+    overlay.classList.add('active');
+    bar.style.width = '0%';
+
+    // Fake progress animation (reaches 90% in 5 seconds)
+    let progress = 0;
+    const interval = setInterval(() => {
+        if (progress < 90) {
+            progress += 1;
+            bar.style.width = `${progress}%`;
+        }
+    }, 50);
+
+    try {
+        const res = await fetch(`${API_BASE}/export/pdf?person=${encodeURIComponent(name)}`);
+
+        if (!res.ok) throw new Error('Failed to generate PDF');
+
+        const blob = await res.blob();
+
+        // Complete progress
+        clearInterval(interval);
+        bar.style.width = '100%';
+
+        setTimeout(() => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Highlights_${name.replace(/\s+/g, '_')}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+
+            // Cleanup
+            overlay.classList.remove('active');
+            showToast(`PDF exported for ${name}`, 'success');
+        }, 300);
+
+    } catch (e) {
+        clearInterval(interval);
+        overlay.classList.remove('active');
+        console.error(e);
+        showToast(`Failed to export PDF`, 'error');
     }
 }
 

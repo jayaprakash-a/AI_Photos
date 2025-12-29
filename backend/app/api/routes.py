@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
 from app.db.session import SessionLocal
@@ -6,6 +7,8 @@ from app.tasks import ingest_photos
 from app.models import Photo
 from datetime import datetime
 import logging
+from fastapi.responses import FileResponse, StreamingResponse
+from app.api.export_pdf import generate_person_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -231,23 +234,73 @@ from app.models import Cluster, Face
 @router.get("/people")
 def get_people(db: Session = Depends(get_db)):
     """
-    List all detected people (clusters).
+    List all detected people.
+    Prioritizes solo photos for reference.
     """
-    people = db.query(Cluster).all()
-    # Simple serialization
+    # 1. Get explicit clusters
+    clusters = db.query(Cluster).all()
     results = []
-    for p in people:
-        face_count = len(p.faces)
-        cover_face = p.faces[0] if p.faces else None
+    seen_identities = set()
+
+    # Subquery for photos with exactly one face detection in the entire DB
+    solo_photo_subq = db.query(Face.photo_id).group_by(Face.photo_id).having(func.count(Face.id) == 1).subquery()
+
+    for p in clusters:
+        # Find a solo photo where this person is the only detected face AND eyes are open
+        solo_face = db.query(Face).filter(
+            Face.cluster_id == p.id, 
+            Face.photo_id.in_(solo_photo_subq),
+            Face.eyes_open == 1
+        ).order_by((Face.w * Face.h).desc(), Face.recognition_confidence.desc()).first()
         
-        # We need a way to serve a face crop or just the full photo
-        # For MVP, just return the photo ID of the first face
+        cover_photo_id = solo_face.photo_id if solo_face else (p.faces[0].photo_id if p.faces else None)
+        
         results.append({
             "id": p.id,
             "name": p.name,
-            "face_count": face_count,
-            "cover_photo_id": cover_face.photo_id if cover_face else None
+            "face_count": len(p.faces),
+            "cover_photo_id": cover_photo_id,
+            "is_solo_ref": solo_face is not None,
+            "is_cluster": True
         })
+        seen_identities.add(p.name)
+
+    # 2. Virtual clusters from unique identities
+    unclustered_rows = db.query(Face.identity).filter(
+        Face.identity.isnot(None), 
+        Face.identity != "",
+        Face.identity.notin_(seen_identities)
+    ).distinct().all()
+
+    for row in unclustered_rows:
+        identity = row.identity
+        
+        # Find solo photo with eyes open for this identity
+        solo_face = db.query(Face).filter(
+            Face.identity == identity, 
+            Face.photo_id.in_(solo_photo_subq),
+            Face.eyes_open == 1
+        ).order_by((Face.w * Face.h).desc(), Face.recognition_confidence.desc()).first()
+        
+        count = db.query(func.count(Face.id)).filter(Face.identity == identity).scalar()
+        
+        if solo_face:
+            cover_id = solo_face.photo_id
+            is_solo = True
+        else:
+            first_face = db.query(Face).filter(Face.identity == identity).first()
+            cover_id = first_face.photo_id if first_face else None
+            is_solo = False
+
+        results.append({
+            "id": f"id_{identity}",
+            "name": identity,
+            "face_count": count,
+            "cover_photo_id": cover_id,
+            "is_solo_ref": is_solo,
+            "is_cluster": False
+        })
+
     return results
 
 class PersonUpdate(BaseModel):
@@ -271,6 +324,46 @@ def get_identities(db: Session = Depends(get_db)):
     # Sort them for the UI
     name_list = sorted([i[0] for i in identities if i[0]])
     return name_list
+
+@router.get("/people/{person_name}/photos")
+def get_person_photos(person_name: str, db: Session = Depends(get_db)):
+    """
+    Get all photos where a specific person is present.
+    """
+    photos = db.query(Photo).join(Face).filter(
+        (Face.identity == person_name) | (Face.cluster_id == db.query(Cluster.id).filter(Cluster.name == person_name).scalar_subquery())
+    ).distinct().order_by(Photo.timestamp.asc()).all()
+    
+    # Simple serialization including blur_score for UI ranking indicator
+    return [
+        {
+            "id": p.id,
+            "filename": p.filename,
+            "timestamp": p.timestamp,
+            "blur_score": p.blur_score,
+            "aesthetic_score": p.aesthetic_score
+        } for p in photos
+    ]
+
+@router.get("/export/pdf")
+def export_people_pdf(person: str, db: Session = Depends(get_db)):
+    """
+    Export a curated PDF of photos for a specific person.
+    """
+    if not person:
+        raise HTTPException(status_code=400, detail="Person name required")
+    
+    pdf_buffer = generate_person_pdf(db, person)
+    if not pdf_buffer:
+        raise HTTPException(status_code=404, detail=f"No photos found for {person}")
+    
+    filename = f"Photos_{person.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+    
+    return StreamingResponse(
+        pdf_buffer, 
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 @router.get("/photos/{photo_id}")
 def get_photo_detail(photo_id: int, db: Session = Depends(get_db)):

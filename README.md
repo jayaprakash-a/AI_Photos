@@ -33,10 +33,11 @@ A local-first, AI-powered photo organization and management tool with intelligen
 - **Location-based Clustering**: Groups photos by geographic proximity
 - **POI Support**: Recognizes landmarks, buildings, tourist attractions, and more
 
-### 📊 Best Shots Gallery
-- **Sharpness Ranking**: Automatically identifies your sharpest photos
-- **Location Clustering**: Option to view best shots grouped by location
-- **Multi-factor Scoring**: Combines sharpness, face count, and aesthetic scores
+### 📄 Smart PDF Export
+- **Person-Specific Highlights**: Curated PDF generation for specific people across all their events.
+- **Diversity Algorithm (ORB)**: Uses OpenCV feature matching to skip burst shots and background duplicates.
+- **Orientation & Scale Fix**: EXIF-aware processing ensures perfect aspect ratios and zero rotation bugs.
+- **Export Progress UI**: Professional loading animations and progress tracking for long-running exports.
 
 ### 🎨 Modern UI
 - **Dark Theme**: Beautiful, modern interface with smooth animations
@@ -148,9 +149,11 @@ The backend provides a RESTful API under the `/api/v1` prefix.
 - `PATCH /events/{id}`: Annotate event name, description, and location
 
 ### AI & People
-- `GET /people/identities`: Get list of uniquely recognized people
-- `GET /people`: Get clusters/people with cover photos
-- `PATCH /people/{id}`: Update person/cluster names
+- `GET /people`: Get clusters/people with solo-shot reference photos.
+- `GET /people/{person_name}/photos`: List every photo of a specific person.
+- `GET /export/pdf?person={name}`: Download a curated highlight PDF.
+- `GET /people/identities`: Get list of uniquely recognized people.
+- `PATCH /people/{id}`: Update person/cluster names.
 
 ### System
 - `GET /stats`: Current library statistics (total vs processed)

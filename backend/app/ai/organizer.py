@@ -3,6 +3,8 @@ from app.models import Photo, Event
 from datetime import timedelta
 import math
 import logging
+import numpy as np
+from sklearn.cluster import DBSCAN
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +27,11 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     r = 6371 # Radius of earth in kilometers.
     return c * r
 
-def organize_library(db: Session, time_gap_hours: float = 4.0, dist_gap_km: float = 20.0):
+def organize_library(db: Session, eps: float = 1.0, min_samples: int = 1):
     """
-    Groups unassigned photos into Events based on time and location gaps.
+    Groups unassigned photos into Events using DBSCAN clustering on time and space.
+    eps=1.0 roughly correlates to a neighborhood of 4 hours OR ~20km.
     """
-    # 1. Get unassigned photos sorted by timestamp
-    # We ignore photos without timestamp for event grouping (or put them in a "Unknown Date" bucket? For now ignore)
     photos = db.query(Photo).filter(
         Photo.event_id.is_(None),
         Photo.timestamp.isnot(None)
@@ -40,50 +41,50 @@ def organize_library(db: Session, time_gap_hours: float = 4.0, dist_gap_km: floa
         logger.info("No unassigned photos to organize.")
         return 0
 
-    current_event = None
-    last_photo_in_event = None
+    # 1. Prepare data for clustering
+    # Scale: 1 unit = 4 hours
+    # Scale: 1 degree ~ 111km. If we want 1 unit ~ 20km, factor is ~5.5
+    data = []
+    for p in photos:
+        t = p.timestamp.timestamp() / (3600 * 4) 
+        lat = (p.latitude if p.latitude is not None else 0) * 5.5
+        lon = (p.longitude if p.longitude is not None else 0) * 5.5
+        data.append([t, lat, lon])
+    
+    X = np.array(data)
+    
+    # 2. Run DBSCAN
+    # min_samples=1 ensures every photo belongs to a cluster
+    clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(X)
+    labels = clustering.labels_
+    
+    # 3. Create Events from clusters
+    from collections import defaultdict
+    clusters = defaultdict(list)
+    for i, label in enumerate(labels):
+        clusters[label].append(photos[i])
+        
     created_count = 0
-    
-    # Heuristic: Start with the first photo
-    # If we have no current event, create one.
-    
-    for photo in photos:
-        if current_event is None:
-            current_event = create_new_event(db, photo)
-            last_photo_in_event = photo
-            created_count += 1
+    # Process each cluster as an event
+    for label, cluster_photos in clusters.items():
+        if label == -1: # Noise (shouldn't happen with min_samples=1)
+            # Treat each noise point as its own event or ignore. 
+            # With min_samples=1, everything is at least in its own cluster.
             continue
             
-        # Check gaps
-        # Time Gap
-        time_diff = photo.timestamp - current_event.end_time
-        is_large_time_gap = time_diff > timedelta(hours=time_gap_hours)
+        # Create or find event for this cluster
+        # Sort by time just in case
+        cluster_photos.sort(key=lambda p: p.timestamp)
+        first_photo = cluster_photos[0]
         
-        # Space Gap
-        # Compare with the LAST photo added to the current event sequence
-        dist = 0
-        if last_photo_in_event and photo.latitude and last_photo_in_event.latitude:
-            dist = haversine_distance(photo.latitude, photo.longitude, last_photo_in_event.latitude, last_photo_in_event.longitude)
+        event = create_new_event(db, first_photo)
+        created_count += 1
         
-        is_large_dist_gap = dist > dist_gap_km
-        
-        if is_large_time_gap or is_large_dist_gap:
-            # Finalize old event stats
-            finalize_event(db, current_event)
+        for photo in cluster_photos:
+            add_photo_to_event(db, event, photo)
             
-            # Start new event
-            current_event = create_new_event(db, photo)
-            last_photo_in_event = photo
-            created_count += 1
-        else:
-            # Add to current event
-            add_photo_to_event(db, current_event, photo)
-            last_photo_in_event = photo
-            
-    # Finalize last event
-    if current_event:
-        finalize_event(db, current_event)
-        
+        finalize_event(db, event)
+    
     db.commit()
     return created_count
 
